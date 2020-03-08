@@ -146,10 +146,19 @@ static void gap_params_init(void)
     APP_ERROR_CHECK(err_code);
 }
 
+/** @brief Function for handling events from the GATT library.*/
+void gatt_evt_handler(nrf_ble_gatt_t * p_gatt, nrf_ble_gatt_evt_t const * p_evt)
+{
+    if ((m_conn_handle == p_evt->conn_handle) && (p_evt->evt_id == NRF_BLE_GATT_EVT_ATT_MTU_UPDATED))
+    {
+        NRF_LOG_INFO("MTU is set to: %u", p_evt->params.att_mtu_effective);
+    }
+}
+
 /** @brief Function for initializing the GATT module.*/
 static void gatt_init(void)
 {
-    ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
+    ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, gatt_evt_handler);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -225,7 +234,7 @@ static void rgb_write_handler(uint16_t               conn_handle,
                               ble_custom_service_t * p_service,
                               uint8_t const *        rgb_values)
 {
-    NRF_LOG_INFO("Received RGB values: %u %u %u", rgb_values[0], rgb_values[1], rgb_values[2]);
+    NRF_LOG_INFO("Received RGB values: %u %u", rgb_values[0], rgb_values[149]);
 }
 
 /** @brief Function for initializing services that will be used by the application.*/

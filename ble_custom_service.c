@@ -2,6 +2,10 @@
 #include "ble_custom_service.h"
 #include "ble_srv_common.h"
 
+#define RGB_LED_COUNT 50
+#define LED_PER_RGB   3
+#define RGB_LED_PACKET_SIZE (RGB_LED_COUNT * LED_PER_RGB * sizeof(uint8_t))
+
 /**
  * @brief Function for handling the Write event.
  *
@@ -13,7 +17,7 @@ static void on_write(ble_custom_service_t * p_service, ble_evt_t const * p_ble_e
     ble_gatts_evt_write_t const * p_evt_write = &p_ble_evt->evt.gatts_evt.params.write;
 
     if ((p_evt_write->handle == p_service->rgb_char_handles.value_handle) &&
-        (p_evt_write->len == 3) &&
+        (p_evt_write->len == RGB_LED_PACKET_SIZE) &&
         (p_service->rgb_write_handler != NULL))
     {
         p_service->rgb_write_handler(p_ble_evt->evt.gap_evt.conn_handle,
@@ -82,12 +86,13 @@ uint32_t ble_custom_service_init(ble_custom_service_t *              p_service,
     }
 
     // Add RGB LED characteristic.
+    uint8_t initial_value[RGB_LED_PACKET_SIZE];
+    memset(initial_value, 0, sizeof(initial_value));
     memset(&add_char_params, 0, sizeof(add_char_params));
     add_char_params.uuid             = CUSTOM_SERVICE_UUID_RGB_CHAR;
     add_char_params.uuid_type        = p_service->uuid_type;
-    add_char_params.init_len         = sizeof(uint8_t) * 3; // Single byte per LED
-    add_char_params.max_len          = sizeof(uint8_t) * 3;
-    uint8_t initial_value[3]         = {0};
+    add_char_params.init_len         = RGB_LED_PACKET_SIZE;
+    add_char_params.max_len          = RGB_LED_PACKET_SIZE;
     add_char_params.p_init_value     = initial_value;
     add_char_params.char_props.read  = 1;
     add_char_params.char_props.write = 1;
