@@ -20,6 +20,10 @@
 #include "nrf_ble_gatt.h"
 #include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
+#include "nrf_power.h"
+
+#include "ble_dfu.h"
+#include "nrf_bootloader_info.h"
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
@@ -115,6 +119,60 @@ static void timers_init(void)
     ret_code_t err_code = app_timer_init();
     APP_ERROR_CHECK(err_code);
 }
+
+/**
+ * @brief Function for handling DFU events.
+ *
+ * @details This function is called when entering buttonless DFU.
+ *
+ * @param[in] event Buttonless DFU event.
+ */
+static void ble_dfu_buttonless_evt_handler(ble_dfu_buttonless_evt_type_t event)
+{
+    switch (event)
+    {
+        case BLE_DFU_EVT_BOOTLOADER_ENTER_PREPARE:
+            NRF_LOG_INFO("Device is preparing to enter bootloader mode");
+            break;
+
+        case BLE_DFU_EVT_BOOTLOADER_ENTER:
+            NRF_LOG_INFO("Device will enter bootloader mode");
+            break;
+
+        case BLE_DFU_EVT_BOOTLOADER_ENTER_FAILED:
+            NRF_LOG_ERROR("Device failed to enter bootloader mode");
+            break;
+
+        default:
+            NRF_LOG_INFO("Unknown event from ble_dfu.");
+            break;
+    }
+}
+
+/**
+ * @brief Function for handling bootloader power management events
+ *
+ * @details This function is called to set a persistent register which informs the
+ * bootloader it should continue or pass control back to the application
+ *
+ * @param[in] event Power management event.
+ */
+static bool app_shutdown_handler(nrf_pwr_mgmt_evt_t event)
+{
+    switch (event)
+    {
+        case NRF_PWR_MGMT_EVT_PREPARE_DFU:
+            NRF_LOG_INFO("Power management wants to reset to DFU mode");
+            break;
+
+        default:
+            break;
+    }
+
+    NRF_LOG_INFO("Power management allowed to reset to DFU mode");
+    return true;
+}
+NRF_PWR_MGMT_HANDLER_REGISTER(app_shutdown_handler, 0);
 
 /**
  * @brief Function for the GAP initialization.
@@ -242,6 +300,7 @@ static void services_init(void)
 {
     ret_code_t                  err_code;
     ble_custom_service_config_t config   = {0};
+    ble_dfu_buttonless_init_t   dfu_init = {0};
     nrf_ble_qwr_init_t          qwr_init = {0};
 
     // Initialize Queued Write Module.
@@ -254,6 +313,10 @@ static void services_init(void)
     config.rgb_write_handler = rgb_write_handler;
 
     err_code = ble_custom_service_init(&m_custom_service, &config);
+    APP_ERROR_CHECK(err_code);
+
+    dfu_init.evt_handler = ble_dfu_buttonless_evt_handler;
+    err_code = ble_dfu_buttonless_init(&dfu_init);
     APP_ERROR_CHECK(err_code);
 }
 
