@@ -23,6 +23,8 @@
 #include "nrf_power.h"
 #include "hardfault.h"
 #include "nrf_sdm.h"
+#include "nrfx_wdt.h"
+#include "nrf_delay.h"
 
 #include "ble_dfu.h"
 #include "nrf_bootloader_info.h"
@@ -649,6 +651,33 @@ static void power_management_init(void)
     APP_ERROR_CHECK(err_code);
 }
 
+/** @brief Function for initializing watchdog.*/
+static nrfx_err_t watchdog_init(void)
+{
+    nrfx_wdt_config_t wdt_config =
+    {
+        .behaviour = NRF_WDT_BEHAVIOUR_PAUSE_SLEEP_HALT,
+        .reload_value = 2000, // ms
+    };
+
+    nrfx_err_t status;
+    status = nrfx_wdt_init(&wdt_config, NULL);
+    if (status != NRFX_SUCCESS)
+    {
+        return status;
+    }
+
+    nrfx_wdt_channel_id wdt_ch;
+    status = nrfx_wdt_channel_alloc(&wdt_ch);
+    if (status != NRFX_SUCCESS)
+    {
+        return status;
+    }
+
+    nrfx_wdt_enable();
+    return NRFX_SUCCESS;
+}
+
 /**
  * @brief Function for handling the idle state (main loop).
  *
@@ -656,8 +685,22 @@ static void power_management_init(void)
  */
 static void idle_state_handle(void)
 {
+    nrfx_wdt_feed();
     if (NRF_LOG_PROCESS() == false)
     {
+        // Due to Errata 88, watchdog configured in pause-on-sleep mode may significally raise
+        // the current consumption if HFXO is running when going to sleep.
+        // Normally HFXO is managed by the SoftDevice and enabled only on BLE event,
+        // but some peripheral may keep it running. In such case workaround needs to be applied.
+        uint32_t hfclk_is_running;
+        (void)sd_clock_hfclk_is_running(&hfclk_is_running);
+        if (hfclk_is_running)
+        {
+            NRF_LOG_WARNING("HFXO enabled when going to sleep!");
+
+            // Apply workaround for Errata 88
+            nrf_delay_us(125);
+        }
         nrf_pwr_mgmt_run();
     }
 }
@@ -665,6 +708,26 @@ static void idle_state_handle(void)
 /** @brief Function for application main entry.*/
 int main(void)
 {
+    // Verify last reset source.
+    // Due to Errata 136 RESETREAS can't be trusted when pin reset occurs.
+    // Therefore detecting watchdog reset is possible only if pin reset did not occured previously.
+    // This issue is not applicable on target hardware as pin reset is not used there.
+    uint32_t resetreas = nrf_power_resetreas_get();
+    if (resetreas & NRF_POWER_RESETREAS_DOG_MASK)
+    {
+        nrf_power_resetreas_clear(NRF_POWER_RESETREAS_DOG_MASK);
+
+        // If watchdog caused last reset enter DFU mode.
+        dfu_crude_enter();
+    }
+
+    // Start watchdog timer immediately. Trust nobody.
+    if (watchdog_init() != NRFX_SUCCESS)
+    {
+        // Failed to start watchdog - going to DFU mode.
+        dfu_crude_enter();
+    }
+
     // Initialize subsequent modules.
     log_init();
     leds_init();
