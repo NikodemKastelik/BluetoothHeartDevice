@@ -21,6 +21,7 @@
 #include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_power.h"
+#include "hardfault.h"
 #include "nrf_sdm.h"
 
 #include "ble_dfu.h"
@@ -149,6 +150,23 @@ extern void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
             NRF_LOG_ERROR("UNKNOWN FAULT at 0x%08X", pc);
             break;
     }
+
+    // Power management module may not be initialized at this point.
+    // It is safer to enter DFU mode without Power Management API.
+    dfu_crude_enter();
+}
+
+/**
+ * @brief Function for handling HardFault exception.
+ *
+ * This function is called from 'hardfault' library,
+ * where it overrides weak implementation.
+ *
+ * @param[in] p_stack Pointer to the stack bottom.
+ */
+extern void HardFault_process(HardFault_stack_t * p_stack)
+{
+    (void)p_stack;
 
     // Power management module may not be initialized at this point.
     // It is safer to enter DFU mode without Power Management API.
