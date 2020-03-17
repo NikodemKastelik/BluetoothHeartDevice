@@ -21,6 +21,7 @@
 #include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_power.h"
+#include "nrf_sdm.h"
 
 #include "ble_dfu.h"
 #include "nrf_bootloader_info.h"
@@ -80,6 +81,79 @@ static ble_gap_adv_data_t m_adv_data =
 
     }
 };
+
+/**
+ * @brief Function for entering the DFU mode in a crude manner.
+ *
+ * Graceful reset into DFU mode should be done via Power Management library,
+ * but critical error can appear before Power Management is initialized.
+ */
+void dfu_crude_enter(void)
+{
+    // Set the magic number in GPREGRET register to enter DFU after reset.
+    nrf_power_gpregret_set(BOOTLOADER_DFU_START);
+
+    // Perform software reset directly.
+    NVIC_SystemReset();
+}
+
+/**
+ * @brief Common function for handling errors across different modules.
+ *
+ * This function is called from 'app_error' library,
+ * where it overrides weak implementation.
+ *
+ * @note This function is called when @ref APP_ERROR_HANDLER macro is invoked
+ *       or when @ref APP_ERROR_CHECK fails.
+ *
+ * @param[in] id   Fault identification number.
+ * @param[in] pc   Program counter which the fault occured at.
+ * @param[in] info Address of the structure containing assertion details.
+ */
+extern void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
+{
+    __disable_irq();
+    NRF_LOG_FINAL_FLUSH();
+
+    switch (id)
+    {
+#if defined(SOFTDEVICE_PRESENT) && SOFTDEVICE_PRESENT
+        case NRF_FAULT_ID_SD_ASSERT:
+            NRF_LOG_ERROR("SOFTDEVICE: ASSERTION FAILED");
+            break;
+        case NRF_FAULT_ID_APP_MEMACC:
+            NRF_LOG_ERROR("SOFTDEVICE: INVALID MEMORY ACCESS");
+            break;
+#endif
+        case NRF_FAULT_ID_SDK_ASSERT:
+        {
+            assert_info_t * p_info = (assert_info_t *)info;
+            NRF_LOG_ERROR("ASSERTION FAILED at %s:%u",
+                          p_info->p_file_name,
+                          p_info->line_num);
+            break;
+        }
+        case NRF_FAULT_ID_SDK_ERROR:
+        {
+            error_info_t * p_info = (error_info_t *)info;
+            NRF_LOG_ERROR("ERROR %u [%s] at %s:%u\r\nPC at: 0x%08x",
+                          p_info->err_code,
+                          nrf_strerror_get(p_info->err_code),
+                          p_info->p_file_name,
+                          p_info->line_num,
+                          pc);
+             NRF_LOG_ERROR("End of error report");
+            break;
+        }
+        default:
+            NRF_LOG_ERROR("UNKNOWN FAULT at 0x%08X", pc);
+            break;
+    }
+
+    // Power management module may not be initialized at this point.
+    // It is safer to enter DFU mode without Power Management API.
+    dfu_crude_enter();
+}
 
 /**
  * @brief Function for assert macro callback.
