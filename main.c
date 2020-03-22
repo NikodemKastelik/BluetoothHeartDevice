@@ -25,6 +25,7 @@
 #include "nrf_sdm.h"
 #include "nrfx_wdt.h"
 #include "nrf_delay.h"
+#include "ws2812_i2s.h"
 
 #include "ble_dfu.h"
 #include "nrf_bootloader_info.h"
@@ -33,10 +34,12 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
-#define ADVERTISING_LED                 BSP_BOARD_LED_0                         /**< Is on when device is advertising. */
-#define CONNECTED_LED                   BSP_BOARD_LED_1                         /**< Is on when device has connected. */
-#define LEDBUTTON_LED                   BSP_BOARD_LED_2
-#define LEDBUTTON_BUTTON                BSP_BUTTON_0                            /**< Button that will trigger the notification event with the battery characteristic.*/
+#include "app_config.h"
+
+//#define ADVERTISING_LED                 BSP_BOARD_LED_0                         /**< Is on when device is advertising. */
+//#define CONNECTED_LED                   BSP_BOARD_LED_1                         /**< Is on when device has connected. */
+//#define LEDBUTTON_LED                   BSP_BOARD_LED_2
+//#define LEDBUTTON_BUTTON                BSP_BUTTON_0                            /**< Button that will trigger the notification event with the battery characteristic.*/
 
 #define DEVICE_NAME                     "Custom_Service"                        /**< Name of device. Will be included in the advertising data. */
 
@@ -199,7 +202,7 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
  */
 static void leds_init(void)
 {
-    bsp_board_init(BSP_INIT_LEDS);
+    //bsp_board_init(BSP_INIT_LEDS);
 }
 
 /**
@@ -387,6 +390,7 @@ static void rgb_write_handler(uint16_t               conn_handle,
                               uint8_t const *        rgb_values)
 {
     NRF_LOG_INFO("Received RGB values: %u %u", rgb_values[0], rgb_values[149]);
+    ws2812_i2s_leds_set(rgb_values);
 }
 
 /** @brief Function for initializing services that will be used by the application.*/
@@ -476,7 +480,7 @@ static void advertising_start(void)
     err_code = sd_ble_gap_adv_start(m_adv_handle, APP_BLE_CONN_CFG_TAG);
     APP_ERROR_CHECK(err_code);
 
-    bsp_board_led_on(ADVERTISING_LED);
+    //bsp_board_led_on(ADVERTISING_LED);
 }
 
 /**
@@ -493,8 +497,8 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     {
         case BLE_GAP_EVT_CONNECTED:
             NRF_LOG_INFO("Connected");
-            bsp_board_led_on(CONNECTED_LED);
-            bsp_board_led_off(ADVERTISING_LED);
+            //bsp_board_led_on(CONNECTED_LED);
+            //bsp_board_led_off(ADVERTISING_LED);
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
             err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr, m_conn_handle);
             APP_ERROR_CHECK(err_code);
@@ -504,7 +508,7 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
 
         case BLE_GAP_EVT_DISCONNECTED:
             NRF_LOG_INFO("Disconnected");
-            bsp_board_led_off(CONNECTED_LED);
+            //bsp_board_led_off(CONNECTED_LED);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
             err_code = app_button_disable();
             APP_ERROR_CHECK(err_code);
@@ -592,6 +596,7 @@ static void ble_stack_init(void)
  * @param[in] pin_no        The pin that the event applies to.
  * @param[in] button_action The button action (press/release).
  */
+/*
 static void button_event_handler(uint8_t pin_no, uint8_t button_action)
 {
     ret_code_t err_code;
@@ -618,10 +623,12 @@ static void button_event_handler(uint8_t pin_no, uint8_t button_action)
             break;
     }
 }
+*/
 
 /** @brief Function for initializing the button handler module.*/
 static void buttons_init(void)
 {
+    /*
     ret_code_t err_code;
 
     //The array must be static because a pointer to it will be saved in the button handler module.
@@ -632,6 +639,7 @@ static void buttons_init(void)
 
     err_code = app_button_init(buttons, ARRAY_SIZE(buttons), BUTTON_DETECTION_DELAY);
     APP_ERROR_CHECK(err_code);
+    */
 }
 
 /** @brief Function for initializing the logger subsystem.*/
@@ -676,6 +684,36 @@ static nrfx_err_t watchdog_init(void)
 
     nrfx_wdt_enable();
     return NRFX_SUCCESS;
+}
+
+static void ws2812_init(void)
+{
+    nrf_gpio_cfg_output(WS2812_PIN_ENABLE);
+    nrf_gpio_pin_set(WS2812_PIN_ENABLE);
+
+    nrfx_err_t status = ws2812_i2s_init(WS2812_I2S_PIN_DATA,
+                                        WS2812_I2S_PIN_SCK,
+                                        WS2812_I2S_PIN_LRCK);
+    if (status != NRFX_SUCCESS)
+    {
+        NRF_LOG_ERROR("Failed to initialize WS2812 driver.");
+    }
+
+    // Configure WS2812 data pin as high-drive, to increase switching speed
+    // of output transistor present on the target device.
+    nrf_gpio_cfg(WS2812_I2S_PIN_DATA,
+                 NRF_GPIO_PIN_DIR_OUTPUT,
+                 NRF_GPIO_PIN_INPUT_DISCONNECT,
+                 NRF_GPIO_PIN_NOPULL,
+                 NRF_GPIO_PIN_H0H1,
+                 NRF_GPIO_PIN_NOSENSE);
+
+    uint8_t initial_led_setting[WS2812_LED_COUNT * 3];
+    for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; led_idx++)
+    {
+        initial_led_setting[led_idx] = 1;
+    }
+    ws2812_i2s_leds_set(initial_led_setting);
 }
 
 /**
@@ -744,6 +782,8 @@ int main(void)
     // Start execution.
     NRF_LOG_INFO("Application started.");
     advertising_start();
+
+    ws2812_init();
 
     // Enter main loop. BLE-related events are handled via callbacks from the SoftDevice.
     for (;;)
