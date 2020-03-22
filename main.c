@@ -25,7 +25,8 @@
 #include "nrf_sdm.h"
 #include "nrfx_wdt.h"
 #include "nrf_delay.h"
-
+#include "BLE_Heart_SPI.h"
+#include "BLE_Heart_LIS3DSH.h"
 #include "ble_dfu.h"
 #include "nrf_bootloader_info.h"
 
@@ -741,13 +742,23 @@ int main(void)
     advertising_init();
     conn_params_init();
 
-    // Start execution.
-    NRF_LOG_INFO("Application started.");
-    advertising_start();
 
+    BLE_Heart_SPI_Init();
+    LIS3DSH_Init();
+
+    // Start execution.
+
+
+    advertising_start();
+    //NRF_LOG_FLUSH();
     // Enter main loop. BLE-related events are handled via callbacks from the SoftDevice.
     for (;;)
     {
+      if(LIS3DSH_Data_Ready_Getter()==1)
+       {
+          LIS3DSH_get_data();
+       }
+        LIS3DSH_Print_data();
         idle_state_handle();
     }
 }
