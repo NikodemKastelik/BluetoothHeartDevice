@@ -711,7 +711,7 @@ static void ws2812_init(void)
     uint8_t initial_led_setting[WS2812_LED_COUNT * 3];
     for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; led_idx++)
     {
-        initial_led_setting[led_idx] = 1;
+        initial_led_setting[led_idx] = 10;
     }
     ws2812_i2s_leds_set(initial_led_setting);
 }

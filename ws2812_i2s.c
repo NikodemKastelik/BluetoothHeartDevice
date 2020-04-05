@@ -117,6 +117,10 @@ void ws2812_i2s_leds_set(uint8_t const * p_led_rgb_values)
             data_word |= ((led_color & (1 << bit_idx)) ? WS2812_BIT_1 : WS2812_BIT_0)
                          << (bit_idx * I2S_BITS_PER_RGB_BIT);
         }
+
+        // Swap bytes in 4-byte word
+        data_word = (data_word >> 16) | (data_word << 16);
+
         m_i2s_tx_buffer[I2S_DATA_WORDS_FOR_RESET + idx] = data_word;
     }
 }
