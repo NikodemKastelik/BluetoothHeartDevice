@@ -15,7 +15,6 @@
 #include "nrf_sdh_ble.h"
 #include "boards.h"
 #include "app_timer.h"
-#include "app_button.h"
 #include "ble_custom_service.h"
 #include "nrf_ble_gatt.h"
 #include "nrf_ble_qwr.h"
@@ -32,11 +31,6 @@
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
-
-#define ADVERTISING_LED                 BSP_BOARD_LED_0                         /**< Is on when device is advertising. */
-#define CONNECTED_LED                   BSP_BOARD_LED_1                         /**< Is on when device has connected. */
-#define LEDBUTTON_LED                   BSP_BOARD_LED_2
-#define LEDBUTTON_BUTTON                BSP_BUTTON_0                            /**< Button that will trigger the notification event with the battery characteristic.*/
 
 #define DEVICE_NAME                     "Custom_Service"                        /**< Name of device. Will be included in the advertising data. */
 
@@ -190,16 +184,6 @@ extern void HardFault_process(HardFault_stack_t * p_stack)
 void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 {
     app_error_handler(DEAD_BEEF, line_num, p_file_name);
-}
-
-/**
- * @brief Function for the LEDs initialization.
- *
- * @details Initializes all LEDs used by the application.
- */
-static void leds_init(void)
-{
-    bsp_board_init(BSP_INIT_LEDS);
 }
 
 /**
@@ -475,8 +459,6 @@ static void advertising_start(void)
 
     err_code = sd_ble_gap_adv_start(m_adv_handle, APP_BLE_CONN_CFG_TAG);
     APP_ERROR_CHECK(err_code);
-
-    bsp_board_led_on(ADVERTISING_LED);
 }
 
 /**
@@ -493,21 +475,14 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
     {
         case BLE_GAP_EVT_CONNECTED:
             NRF_LOG_INFO("Connected");
-            bsp_board_led_on(CONNECTED_LED);
-            bsp_board_led_off(ADVERTISING_LED);
             m_conn_handle = p_ble_evt->evt.gap_evt.conn_handle;
             err_code = nrf_ble_qwr_conn_handle_assign(&m_qwr, m_conn_handle);
-            APP_ERROR_CHECK(err_code);
-            err_code = app_button_enable();
             APP_ERROR_CHECK(err_code);
             break;
 
         case BLE_GAP_EVT_DISCONNECTED:
             NRF_LOG_INFO("Disconnected");
-            bsp_board_led_off(CONNECTED_LED);
             m_conn_handle = BLE_CONN_HANDLE_INVALID;
-            err_code = app_button_disable();
-            APP_ERROR_CHECK(err_code);
             advertising_start();
             break;
 
@@ -584,54 +559,6 @@ static void ble_stack_init(void)
 
     // Register a handler for BLE events.
     NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
-}
-
-/**
- * @brief Function for handling events from the button handler module.
- *
- * @param[in] pin_no        The pin that the event applies to.
- * @param[in] button_action The button action (press/release).
- */
-static void button_event_handler(uint8_t pin_no, uint8_t button_action)
-{
-    ret_code_t err_code;
-
-    switch (pin_no)
-    {
-        case LEDBUTTON_BUTTON:
-            // As for now, it is used to simulate battery charge level notification.
-            NRF_LOG_INFO("Send battery charge level notification.");
-            err_code = ble_custom_service_on_battery_change(m_conn_handle,
-                                                            &m_custom_service,
-                                                            button_action);
-            if (err_code != NRF_SUCCESS &&
-                err_code != BLE_ERROR_INVALID_CONN_HANDLE &&
-                err_code != NRF_ERROR_INVALID_STATE &&
-                err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
-            {
-                APP_ERROR_CHECK(err_code);
-            }
-            break;
-
-        default:
-            APP_ERROR_HANDLER(pin_no);
-            break;
-    }
-}
-
-/** @brief Function for initializing the button handler module.*/
-static void buttons_init(void)
-{
-    ret_code_t err_code;
-
-    //The array must be static because a pointer to it will be saved in the button handler module.
-    static app_button_cfg_t buttons[] =
-    {
-        {LEDBUTTON_BUTTON, false, BUTTON_PULL, button_event_handler}
-    };
-
-    err_code = app_button_init(buttons, ARRAY_SIZE(buttons), BUTTON_DETECTION_DELAY);
-    APP_ERROR_CHECK(err_code);
 }
 
 /** @brief Function for initializing the logger subsystem.*/
@@ -730,9 +657,7 @@ int main(void)
 
     // Initialize subsequent modules.
     log_init();
-    leds_init();
     timers_init();
-    buttons_init();
     power_management_init();
     ble_stack_init();
     gap_params_init();
