@@ -24,6 +24,7 @@
 #include "nrf_sdm.h"
 #include "nrfx_wdt.h"
 #include "nrf_delay.h"
+#include "ws2812_i2s.h"
 
 #include "ble_dfu.h"
 #include "nrf_bootloader_info.h"
@@ -32,26 +33,7 @@
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 
-#define DEVICE_NAME                     "Custom_Service"                        /**< Name of device. Will be included in the advertising data. */
-
-#define APP_BLE_OBSERVER_PRIO           3                                       /**< Application's BLE observer priority.*/
-#define APP_BLE_CONN_CFG_TAG            1                                       /**< A tag identifying the SoftDevice BLE configuration. */
-
-#define APP_ADV_INTERVAL                64                                      /**< The advertising interval (in units of 0.625 ms; this value corresponds to 40 ms). */
-#define APP_ADV_DURATION                BLE_GAP_ADV_TIMEOUT_GENERAL_UNLIMITED   /**< The advertising time-out (in units of seconds). When set to 0, we will never time out. */
-
-#define MIN_CONN_INTERVAL               MSEC_TO_UNITS(100, UNIT_1_25_MS)        /**< Minimum acceptable connection interval (0.5 seconds). */
-#define MAX_CONN_INTERVAL               MSEC_TO_UNITS(200, UNIT_1_25_MS)        /**< Maximum acceptable connection interval (1 second). */
-#define SLAVE_LATENCY                   0                                       /**< Slave latency. */
-#define CONN_SUP_TIMEOUT                MSEC_TO_UNITS(4000, UNIT_10_MS)         /**< Connection supervisory time-out (4 seconds). */
-
-#define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(20000)                  /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (15 seconds). */
-#define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(5000)                   /**< Time between each call to sd_ble_gap_conn_param_update after the first call (5 seconds). */
-#define MAX_CONN_PARAMS_UPDATE_COUNT    3                                       /**< Number of attempts before giving up the connection parameter negotiation. */
-
-#define BUTTON_DETECTION_DELAY          APP_TIMER_TICKS(50)                     /**< Delay from a GPIOTE event until a button is reported as pushed (in number of timer ticks). */
-
-#define DEAD_BEEF                       0xDEADBEEF                              /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+#include "app_config.h"
 
 BLE_CUSTOM_SERVICE_DEF(m_custom_service);                                       /**< Custom Service instance. */
 NRF_BLE_GATT_DEF(m_gatt);                                                       /**< GATT module instance. */
@@ -371,6 +353,7 @@ static void rgb_write_handler(uint16_t               conn_handle,
                               uint8_t const *        rgb_values)
 {
     NRF_LOG_INFO("Received RGB values: %u %u", rgb_values[0], rgb_values[149]);
+    ws2812_i2s_leds_set(rgb_values);
 }
 
 /** @brief Function for initializing services that will be used by the application.*/
@@ -605,6 +588,37 @@ static nrfx_err_t watchdog_init(void)
     return NRFX_SUCCESS;
 }
 
+/** @brief Function for initializing WS2812 LEDs.*/
+static void ws2812_init(void)
+{
+    nrf_gpio_cfg_output(WS2812_PIN_ENABLE);
+    nrf_gpio_pin_set(WS2812_PIN_ENABLE);
+
+    nrfx_err_t status = ws2812_i2s_init(WS2812_I2S_PIN_DATA,
+                                        WS2812_I2S_PIN_SCK,
+                                        WS2812_I2S_PIN_LRCK);
+    if (status != NRFX_SUCCESS)
+    {
+        NRF_LOG_ERROR("Failed to initialize WS2812 driver.");
+    }
+
+    // Configure WS2812 data pin as high-drive, to increase switching speed
+    // of output transistor present on the target device.
+    nrf_gpio_cfg(WS2812_I2S_PIN_DATA,
+                 NRF_GPIO_PIN_DIR_OUTPUT,
+                 NRF_GPIO_PIN_INPUT_DISCONNECT,
+                 NRF_GPIO_PIN_NOPULL,
+                 NRF_GPIO_PIN_H0H1,
+                 NRF_GPIO_PIN_NOSENSE);
+
+    uint8_t initial_led_setting[WS2812_LED_COUNT * 3];
+    for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; led_idx++)
+    {
+        initial_led_setting[led_idx] = 10;
+    }
+    ws2812_i2s_leds_set(initial_led_setting);
+}
+
 /**
  * @brief Function for handling the idle state (main loop).
  *
@@ -669,6 +683,8 @@ int main(void)
     // Start execution.
     NRF_LOG_INFO("Application started.");
     advertising_start();
+
+    ws2812_init();
 
     // Enter main loop. BLE-related events are handled via callbacks from the SoftDevice.
     for (;;)
