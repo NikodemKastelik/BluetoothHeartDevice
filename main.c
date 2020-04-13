@@ -708,10 +708,11 @@ static void ws2812_init(void)
                  NRF_GPIO_PIN_H0H1,
                  NRF_GPIO_PIN_NOSENSE);
 
-    uint8_t initial_led_setting[WS2812_LED_COUNT * 3];
-    for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; led_idx++)
+    uint8_t initial_led_setting[WS2812_LED_COUNT * 3]={0};
+    for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; )
     {
-        initial_led_setting[led_idx] = 10;
+        initial_led_setting[led_idx] = 0;
+        led_idx++;
     }
     ws2812_i2s_leds_set(initial_led_setting);
 }
@@ -789,6 +790,7 @@ int main(void)
     for (;;)
     {
         idle_state_handle();
+        //ws2812_random_refresh();
     }
 }
 

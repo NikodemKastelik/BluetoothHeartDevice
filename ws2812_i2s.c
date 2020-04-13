@@ -5,6 +5,9 @@
 #error "Symbol WS2812_LED_COUNT is not defined, so driver cannot determine buffer size."
 #endif
 
+
+APP_TIMER_DEF(led_rand_timer);     /**< Handler for repeated timer used to blink LED 1. */
+
 #if defined(WS2812_LOGIC_INVERT)
     #define WS2812_BIT_0 0x7uL // 0b0111
     #define WS2812_BIT_1 0x1uL // 0b0001
@@ -54,6 +57,13 @@
 #define I2S_BUFFER_SIZE (I2S_DATA_WORDS_FOR_RESET + I2S_DATA_WORDS_FOR_LEDS)
 
 static uint32_t m_i2s_tx_buffer[I2S_BUFFER_SIZE];
+static struct ws2812_rand_parameters m_ws2812_rand_parameters;
+
+
+static void led_rand_timer_handler(void * p_context)
+{
+    ws2812_random_refresh();
+}
 
 static void i2s_dummy_data_handler(nrfx_i2s_buffers_t const * p_released, uint32_t status)
 {
@@ -103,6 +113,19 @@ nrfx_err_t ws2812_i2s_init(uint8_t ws2812_pin, uint8_t sck_pin, uint8_t lrck_pin
         return status;
     }
 
+    //Timer for leds refresh/random
+    ret_code_t err_code;
+    err_code = app_timer_create(&led_rand_timer,
+                                APP_TIMER_MODE_REPEATED,
+                                led_rand_timer_handler);
+    APP_ERROR_CHECK(err_code);
+    err_code = app_timer_start(led_rand_timer, APP_TIMER_TICKS(20), NULL); //50Hz handler
+    APP_ERROR_CHECK(err_code);
+
+    //TODO default parameters
+    m_ws2812_rand_parameters.delay =4;
+    m_ws2812_rand_parameters.brightness =255;
+    m_ws2812_rand_parameters.m_drive_type=All_Leds;
     return NRFX_SUCCESS;
 }
 
@@ -123,4 +146,122 @@ void ws2812_i2s_leds_set(uint8_t const * p_led_rgb_values)
 
         m_i2s_tx_buffer[I2S_DATA_WORDS_FOR_RESET + idx] = data_word;
     }
+}
+
+void ws2812_random_refresh(void)
+{
+  static uint32_t time_counter;
+  static uint8_t leds_value[WS2812_LED_COUNT * 3];
+  time_counter++;
+  static uint8_t old_red_value;
+  static uint8_t old_green_value;
+  static uint8_t old_blue_value;
+
+  static uint8_t new_red_value;
+  static uint8_t new_green_value;
+  static uint8_t new_blue_value;
+
+  float curr_red_value=0;
+  float curr_green_value=0;
+  float curr_blue_value=0;
+
+  if(time_counter >= m_ws2812_rand_parameters.delay*50) //Refresh leds data !!
+  {
+    time_counter=0;
+    unsigned rand_value = rand()*2;
+    unsigned r = (rand_value & 0xF800) >> 11;
+    unsigned g = (rand_value & 0x07E0) >> 5;
+    unsigned b = rand_value & 0x001F;
+
+
+    old_red_value = new_red_value;
+    old_green_value = new_green_value;
+    old_blue_value = new_blue_value;
+
+    new_red_value = (r << 3) | (r >> 2);
+    new_green_value = (g << 2) | (g >> 4);
+    new_blue_value = (b << 3) | (b >> 2);
+
+  }
+
+  switch(m_ws2812_rand_parameters.m_drive_type)
+  {
+    case All_Leds:
+    {
+          if(new_red_value != old_red_value)
+          {
+              if(old_red_value < new_red_value)
+              {
+                curr_red_value = (float)old_red_value + (( new_red_value - old_red_value )/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+              if(old_red_value > new_red_value)
+              {
+                curr_red_value = (float)old_red_value - ((old_red_value - new_red_value)/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+          }else
+          {
+                curr_red_value = new_red_value;
+          }
+
+
+          if(new_green_value != old_green_value)
+          {
+              if(old_green_value < new_green_value)
+              {
+                curr_green_value = (float)old_green_value + (( new_green_value - old_green_value )/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+              if(old_green_value > new_green_value)
+              {
+                curr_green_value = (float)old_green_value - ((old_green_value - new_green_value)/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+          }else
+          {
+                curr_green_value = new_green_value;
+          }
+
+
+          if(new_blue_value != old_blue_value)
+          {
+              if(old_blue_value < new_blue_value)
+              {
+                curr_blue_value = (float)old_blue_value + (( new_blue_value - old_blue_value )/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+              if(old_blue_value > new_blue_value)
+              {
+                curr_blue_value = (float)old_blue_value - ((old_blue_value - new_blue_value)/(m_ws2812_rand_parameters.delay*50.0))*time_counter;
+              }
+          }else
+          {
+                curr_blue_value = new_blue_value;
+          }
+  
+        for (uint8_t led_idx = 0; led_idx < WS2812_LED_COUNT * 3; )
+        {
+            leds_value[led_idx] = curr_red_value*LED_BRIGHTNESS_COEFFICENT*m_ws2812_rand_parameters.brightness;\
+            led_idx+=3;
+        }
+
+        for (uint8_t led_idx = 1; led_idx < WS2812_LED_COUNT * 3; )
+        {
+            leds_value[led_idx] = curr_green_value*LED_BRIGHTNESS_COEFFICENT*m_ws2812_rand_parameters.brightness;\
+            led_idx+=3;
+        }
+
+        for (uint8_t led_idx = 2; led_idx < WS2812_LED_COUNT * 3; )
+        {
+            leds_value[led_idx] = curr_blue_value*LED_BRIGHTNESS_COEFFICENT*m_ws2812_rand_parameters.brightness;\
+            led_idx+=3;
+        }
+    }
+
+    case Independent_leds:
+    {
+    }
+
+    case Snake_effect:
+    {
+    }
+  }
+
+      ws2812_i2s_leds_set(leds_value);
 }
