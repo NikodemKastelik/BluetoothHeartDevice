@@ -14,7 +14,7 @@ void ws2812_i2s_leds_set(uint8_t const * p_led_rgb_values);
 
 
 /* Functionality for random color refresh */
-#define LED_BRIGHTNESS_COEFFICENT 0.000784 // 0.000784 is 250mA peak current consumption
+#define LED_BRIGHTNESS_COEFFICENT 0.0015 // 0.000784 is 250mA peak current consumption
 
 void ws2812_random_refresh(void); //This function should be triggered 50 times per second
 
